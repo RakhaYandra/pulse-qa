@@ -13,6 +13,7 @@
 WITH gen AS (
   SELECT
     g AS i,
+    gen_random_uuid() AS mid,
     CASE
       WHEN g % 100 < 70 THEN 'http://stub:8099/ok'
       WHEN g % 100 < 85 THEN 'http://stub:8099/slow'
@@ -27,7 +28,10 @@ WITH gen AS (
     END AS nm
   FROM generate_series(1, :N) g
 )
+-- Staggered first runs (same spread rule as app creates): avoids one
+-- synchronized wave that would never occur in real staggered usage.
 INSERT INTO monitors(id, user_id, name, url, method, interval_seconds, timeout_seconds,
-  failure_threshold, recovery_threshold, status, is_active)
-SELECT gen_random_uuid(), :'USER_ID', nm, url, 'GET', 60, 5, 3, 2, 'UNKNOWN', TRUE
+  failure_threshold, recovery_threshold, status, is_active, next_run_at)
+SELECT mid, :'USER_ID', nm, url, 'GET', 60, 5, 3, 2, 'UNKNOWN', TRUE,
+  now() + (abs(hashtext(mid::text) % 60) || ' seconds')::interval
 FROM gen;
