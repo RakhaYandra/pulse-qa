@@ -66,6 +66,7 @@ test('click incident opens its monitor', async ({ page }) => {
   await page.getByLabel('Name', { exact: true }).fill(name);
   await page.getByLabel('URL').fill('https://example.com/does-not-exist-404');
   await page.getByLabel(/Interval/).fill('60');
+  await page.getByLabel(/Failure threshold/).fill('1');
   await page.getByRole('button', { name: 'Create monitor' }).click();
   await page.getByRole('button', { name: 'Monitors' }).click();
   // failure_threshold defaults to 3: wait for 3 failed 60s-interval checks
