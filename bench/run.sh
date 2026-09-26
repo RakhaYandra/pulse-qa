@@ -4,6 +4,9 @@
 # Output: results/bench_N${N}_W${W}.json + summary table on stdout.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Stack lives in pulse-ops repo (sibling checkout). Override with OPS_DIR.
+OPS_DIR="${OPS_DIR:-../pulse-ops}"
+DC="docker compose --project-directory $OPS_DIR"
 
 N=${1:-100}
 W=${2:-2}
@@ -17,8 +20,8 @@ echo "--- up core + stub"
 # Bench targets live on Docker-internal DNS ("stub"), which SSRF filtering
 # blocks by default — allowlist it for the bench only (strict otherwise).
 export PULSE_ALLOW_HOSTS=stub
-docker compose up -d postgres redis api scheduler >/dev/null
-docker compose --profile bench up -d stub >/dev/null
+$DC up -d postgres redis api scheduler >/dev/null
+$DC --profile bench up -d stub >/dev/null
 sleep 3
 
 EMAIL="bench${N}_${W}_$(date +%s)@pulse.local"
@@ -33,27 +36,28 @@ for attempt in $(seq 1 5); do
 done
 if [ "$TOKEN" = "RETRY" ]; then echo "register failed after retries"; exit 1; fi
 USER_ID=$(curl -s localhost:8080/api/v1/auth/me -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['id'])")
-docker compose exec -T postgres psql -U pulse -d pulse -c "DELETE FROM monitors WHERE name LIKE 'bench-%';" >/dev/null
-docker compose exec -T postgres psql -U pulse -d pulse -v N="$N" -v USER_ID="$USER_ID" -f - < bench/seed.sql
+$DC exec -T postgres psql -U pulse -d pulse -c "DELETE FROM monitors WHERE name LIKE 'bench-%';" >/dev/null
+$DC exec -T postgres psql -U pulse -d pulse -v N="$N" -v USER_ID="$USER_ID" -f - < bench/seed.sql
 
 echo "--- workers: stop all, (re)create $W, restart scheduler (zero counters)"
-docker compose stop worker-1 worker-2 worker-3 worker-4 2>/dev/null || true
-for i in $(seq 1 "$W"); do docker compose up -d "worker-$i" >/dev/null; done
-docker compose restart scheduler >/dev/null
+$DC stop worker-1 worker-2 worker-3 worker-4 2>/dev/null || true
+for i in $(seq 1 "$W"); do $DC up -d "worker-$i" >/dev/null; done
+$DC restart scheduler >/dev/null
 sleep 5
 
 echo "--- pre-flight (fail fast on dead rig)"
 STUB_CODE=$(curl -s -o /dev/null -w '%{http_code}' localhost:8099/ok)
 if [ "$STUB_CODE" != "200" ]; then echo "ABORT: stub :8099/ok = $STUB_CODE"; exit 1; fi
 for i in $(seq 1 "$W"); do
-  ENV_OK=$(docker compose exec -T "worker-$i" printenv PULSE_ALLOW_HOSTS 2>/dev/null | tr -d '\r')
+  ENV_OK=$($DC exec -T "worker-$i" printenv PULSE_ALLOW_HOSTS 2>/dev/null | tr -d '\r')
   if [ "$ENV_OK" != "stub" ]; then echo "ABORT: worker-$i PULSE_ALLOW_HOSTS='$ENV_OK' (want 'stub')"; exit 1; fi
 done
-# Early signal: checks must flow within 75s, else abort before long sampling.
+# Early signal: total checks must grow within 75s, else abort before long sampling.
 sleep 60
-UP_NOW=$(curl -s localhost:9102/metrics 2>/dev/null | grep -c '^monitor_checks_total' || true)
+sum_checks() { curl -s localhost:9102/metrics 2>/dev/null | awk '/^monitor_checks_total/{s+=$2} END{printf "%d", s}'; }
+UP_NOW=$(sum_checks)
 sleep 15
-UP_LATER=$(curl -s localhost:9102/metrics 2>/dev/null | grep -c '^monitor_checks_total' || true)
+UP_LATER=$(sum_checks)
 if [ "$UP_LATER" -le "$UP_NOW" ]; then echo "ABORT: no new checks in 75s (workers stuck?)"; exit 1; fi
 echo "pre-flight OK (stub 200, allowlist set, checks flowing)"
 
@@ -82,11 +86,11 @@ print("samples done")
 EOF
 
 echo "--- analyze"
-docker compose exec -T postgres psql -U pulse -d pulse -t -A -c \
+$DC exec -T postgres psql -U pulse -d pulse -t -A -c \
   "SELECT count(*) FROM monitors WHERE name LIKE 'bench-%' AND last_checked_at < now() - interval '120 seconds';" > /tmp/overdue.txt
-docker compose exec -T postgres psql -U pulse -d pulse -t -A -c \
+$DC exec -T postgres psql -U pulse -d pulse -t -A -c \
   "SELECT count(*) FROM incidents i JOIN monitors m ON m.id=i.monitor_id WHERE m.name LIKE 'bench-ok-%';" > /tmp/inc_ok.txt
-docker compose exec -T postgres psql -U pulse -d pulse -t -A -c \
+$DC exec -T postgres psql -U pulse -d pulse -t -A -c \
   "SELECT count(DISTINCT m.id) FROM incidents i JOIN monitors m ON m.id=i.monitor_id WHERE m.name LIKE 'bench-timeout-%' AND i.status='OPEN';" > /tmp/inc_to.txt
 python3 - bench/results/samples_N${N}_W${W}.jsonl "$RES" "$N" "$W" "$(cat /tmp/overdue.txt)" "$(cat /tmp/inc_ok.txt)" "$(cat /tmp/inc_to.txt)" <<'EOF'
 import json, sys, re
