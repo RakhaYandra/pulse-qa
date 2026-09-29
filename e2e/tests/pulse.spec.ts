@@ -72,7 +72,7 @@ test('click incident opens its monitor', async ({ page }) => {
   // failure_threshold defaults to 3: wait for 3 failed 60s-interval checks
   await page.getByRole('button', { name: 'Incidents (0)' }).click();
   await expect(page.locator('.row', { hasText: name })).toBeVisible({ timeout: 170000 });
-  await page.locator('.row', { hasText: name }).first().click();
+  await page.getByRole('link', { name: `Open monitor ${name}` }).click();
   await expect(page.getByText('Recent checks')).toBeVisible({ timeout: 10000 });
   await expect(page.getByText(name).first()).toBeVisible();
 }, 180000);
@@ -96,5 +96,20 @@ test('theme toggle persists across reload', async ({ page }) => {
   await expect(page.locator(`html[data-theme="${next}"]`)).toHaveCount(1);
   await page.reload();
   await expect(page.locator(`html[data-theme="${next}"]`)).toHaveCount(1);
+  await expect(page.getByText('uptime 24h').first()).toBeVisible({ timeout: 10000 });
+});
+
+test('monitor detail deep-links and back returns', async ({ page }) => {
+  const name = 'E2E DeepLink ' + Date.now();
+  await page.getByRole('button', { name: '+ New' }).click();
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('URL').fill('https://example.com');
+  await page.getByRole('button', { name: 'Create monitor' }).click();
+  await page.getByRole('button', { name: 'Monitors' }).click();
+  const href = await page.getByRole('link', { name: `Open ${name}` }).getAttribute('href');
+  await page.goto(href);
+  await expect(page.getByText('Recent checks')).toBeVisible({ timeout: 10000 });
+  await expect(page).toHaveURL(/\/monitors\/.+/);
+  await page.getByRole('button', { name: /back/i }).click();
   await expect(page.getByText('uptime 24h').first()).toBeVisible({ timeout: 10000 });
 });
