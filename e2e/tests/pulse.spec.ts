@@ -55,8 +55,8 @@ test('pause flips monitor to paused', async ({ page }) => {
   await page.getByRole('button', { name: 'Create monitor' }).click();
   await page.getByRole('button', { name: 'Monitors' }).click();
   const row = page.locator('.row', { hasText: name });
-  await row.getByRole('button', { name: 'Pause' }).click();
-  await expect(row.getByText('PAUSED')).toBeVisible({ timeout: 5000 });
+  await row.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(row.locator('span.muted', { hasText: 'PAUSED' })).toBeVisible({ timeout: 5000 });
 });
 
 test('click incident opens its monitor', async ({ page }) => {
