@@ -113,3 +113,16 @@ test('monitor detail deep-links and back returns', async ({ page }) => {
   await page.getByRole('button', { name: /back/i }).click();
   await expect(page.getByText('uptime 24h').first()).toBeVisible({ timeout: 10000 });
 });
+
+test('reports range switch changes days param', async ({ page }) => {
+  const name = 'E2E Range ' + Date.now();
+  await page.getByRole('button', { name: '+ New' }).click();
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('URL').fill('https://example.com');
+  await page.getByRole('button', { name: 'Create monitor' }).click();
+  await page.getByRole('button', { name: 'Reports' }).click();
+  await expect(page.getByText('Per-monitor reliability')).toBeVisible({ timeout: 10000 });
+  await page.getByRole('button', { name: '90d', exact: true }).click();
+  await expect(page).toHaveURL(/days=90/);
+  await expect(page.getByText('last 90 days')).toBeVisible({ timeout: 10000 });
+});
