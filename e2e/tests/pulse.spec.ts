@@ -88,3 +88,13 @@ test('reports tab renders reliability table', async ({ page }) => {
   await expect(page.getByRole('columnheader', { name: 'MTTR' })).toBeVisible();
   await expect(page.getByText(name)).toBeVisible();
 });
+
+test('theme toggle persists across reload', async ({ page }) => {
+  const initial = await page.evaluate(() => document.documentElement.dataset.theme);
+  const next = initial === 'dark' ? 'light' : 'dark';
+  await page.getByRole('button', { name: /switch to (light|dark) mode/i }).click();
+  await expect(page.locator(`html[data-theme="${next}"]`)).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(`html[data-theme="${next}"]`)).toHaveCount(1);
+  await expect(page.getByText('uptime 24h').first()).toBeVisible({ timeout: 10000 });
+});
