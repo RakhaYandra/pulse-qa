@@ -6,11 +6,11 @@ const PASS = 'e2e12345';
 test.beforeEach(async ({ page }) => {
   const email = `e2e${Date.now()}${Math.floor(Math.random() * 1e6)}@pulse.local`;
   await page.goto('/');
-  await page.getByRole('button', { name: /register/i }).click();
+  await page.getByRole('button', { name: 'Register', exact: true }).click();
   await page.getByLabel('Email').fill(email);
   await page.getByLabel(/Password/).fill(PASS);
   await page.getByLabel('Display name').fill('E2E');
-  await page.getByRole('button', { name: /^register$/i }).click();
+  await page.getByRole('button', { name: 'Enter ops deck' }).click();
   await expect(page.getByText('monitors', { exact: false }).first()).toBeVisible({ timeout: 10000 });
 });
 
